@@ -40,11 +40,12 @@ const createRoundedMask = (size, radius) => {
  * - size (optional): Taille en pixels (default: 400, max: 1200)
  * - bgColor (optional): Couleur de fond hex (default: #ffffff)
  * - download (optional): Si 'true', télécharge le fichier au lieu de l'afficher
+ * - format (optional): 'png' ou 'svg' (default: png)
  */
 module.exports = async function handler(req, res) {
     try {
         // Récupérer les paramètres
-        const { url, color = '#000000', logo, size = '400', bgColor = '#ffffff', download } = req.query;
+        const { url, color = '#000000', logo, size = '400', bgColor = '#ffffff', download, format = 'png' } = req.query;
 
         // Validation URL
         if (!url) {
@@ -69,7 +70,34 @@ module.exports = async function handler(req, res) {
             return;
         }
 
-        // Générer le QR Code avec correction d'erreur High (obligatoire pour les logos)
+        // Validation du format
+        const validFormats = ['png', 'svg'];
+        const outputFormat = validFormats.includes(format?.toLowerCase()) ? format.toLowerCase() : 'png';
+
+        // Si format SVG, générer directement en SVG (pas de logo possible)
+        if (outputFormat === 'svg') {
+            const svgString = await QRCode.toString(url, {
+                type: 'svg',
+                errorCorrectionLevel: 'H',
+                width: qrSize,
+                margin: 2,
+                color: {
+                    dark: color,
+                    light: bgColor
+                }
+            });
+
+            res.setHeader('Content-Type', 'image/svg+xml');
+            res.setHeader('Cache-Control', 'public, max-age=86400');
+
+            if (download === 'true') {
+                res.setHeader('Content-Disposition', 'attachment; filename="qrcode.svg"');
+            }
+
+            return res.status(200).send(svgString);
+        }
+
+        // Format PNG : Générer le QR Code avec correction d'erreur High (obligatoire pour les logos)
         const qrBuffer = await QRCode.toBuffer(url, {
             errorCorrectionLevel: 'H',
             width: qrSize,
@@ -82,7 +110,7 @@ module.exports = async function handler(req, res) {
 
         let finalBuffer = qrBuffer;
 
-        // Si un logo est fourni, l'incruster au centre
+        // Si un logo est fourni, l'incruster au centre (PNG seulement)
         if (logo) {
             try {
                 // Validation SSRF : seulement HTTPS et pas d'IPs privées
